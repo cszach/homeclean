@@ -1,2 +1,6 @@
-# homeclean
-:broom: A utility for cleaning your Linux system's home directory, written in Shell.
+homeclean
+=========
+
+A utility to clean your Linux's home.
+
+:warning: Work in progress. :warning:
