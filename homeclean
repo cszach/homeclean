@@ -1,0 +1,186 @@
+#!/bin/bash
+
+# homeclean - Clean your Linux computer's home directory.
+#
+# This work is licensed under the Creative Commons Zero v1.0 Universal and
+# therefore belongs to the public domain. For more information, please visit:
+#
+#     https://creativecommons.org/publicdomain/zero/1.0
+
+VERSION="1.0-beta"
+
+# SET ALIASES FOR SECURITY
+
+alias echo="/usr/bin/echo" printf="/usr/bin/prinf"
+
+# GENERIC OPTIONS
+
+case "$1" in
+    "-h" | "--help")
+        echo "\
+homeclean - Clean your Linux computer's home directory.
+
+Usage: homeclean GENERIC_OPTION
+       homeclean [OPTION]...
+
+Generic options:
+
+  -h, --help                Print this help.
+  -v, --version             Print this program's version.
+
+Options:
+
+  -a, --not-accessed=N       Delete files that haven't been accessed in the last
+                             N days (default: 365).
+  -c, --not-created=N        Delete files that weren't created in the last N
+                             days (default: 365).
+      --ignore=PATHS         Define an ignore pattern. PATHS can include
+                             multiple paths delimited by the colon (':') and
+                             each path can include wildcards. This overrides
+                             .homecleanignore.
+      --include=PATHS        Define an include pattern. This overrides
+                             .homecleaninclude.
+  -I, --invert               Invert selection of files.
+      --trash[=TRASH_PATH]   Move files to trash (default). If TRASH_PATH is
+                             set, use it instead of HOMECLEAN_TRASH.
+      --delete               Delete files permanently.
+  -d, --dry                  Only print selection, do not trash or delete.
+  -p, --preserve-hierarchy   Preserve directory hierarchy in trash (default).
+  -l, --lose-hierarchy       Don't preserve the hierarchy in trash.
+      --cron                 Don't prompt. For use as a cronjob.
+
+Variables:
+
+  HOMECLEAN_NOT_ACCESSED     Equivalent to '--not-accessed' and is overridden
+                             by this option.
+  HOMECLEAN_NOT_CREATED      Equivalent to '--not-created' and is overridden
+                             by this option.
+  HOMECLEAN_INVERT           Equivalent to '--invert' and is overridden by this
+                             option. Can be 'true' or 'false'.
+  HOMECLEAN_BEHAVIOR         What to do to files. Can be 'trash' (default),
+                             'delete', or 'dry'.
+  HOMECLEAN_TRASH            Path to trash. Can be overridden by '--trash'.
+  HOMECLEAN_TRASH_HIERARCHY  If set to 'true' or 'preserve', preserve the
+                             directory hierarchy of files when they are trashed.
+                             If set to 'false' or 'lose', the hierarchy will not
+                             be preserved.
+
+Files:
+
+  .homecleanrc               Executed when homeclean starts. Ideal for setting
+                             variables.
+  .homecleanignore           Read by homeclean to get ignore patterns. Each line
+                             must contain one path only and paths can contain
+                             wildcards.
+  .homecleaninclude          Similar to .homecleanignore but for include
+                             patterns. If include patterns are defined, search
+                             only within them. Otherwise, search in the whole
+                             home directory with the exception of ignored paths.
+  .homecleantrash            Directory where trashed files are stored.
+
+ALWAYS ignored: .bashrc, .bash_profile, .bash_logout, .bash_history"
+        exit 0
+        ;;
+    
+    "-v" | "--version")
+        echo $VERSION
+        exit 0
+        ;;
+esac
+
+# SET EVEN MORE ALIASES FOR MORE SECURITY
+
+alias find="/usr/bin/find"
+
+# SET DEFAULT VALUES
+
+HOMECLEAN_NOT_ACCESSED=365
+HOMECLEAN_NOT_CREATED=365
+HOMECLEAN_INVERT=false
+HOMECLEAN_BEHAVIOR="trash"
+HOMECLEAN_TRASH="$HOME/.homecleantrash"
+HOMECLEAN_TRASH_HIERARCHY="preserve"
+
+HOMECLEAN_IGNORE=""
+HOMECLEAN_INCLUDE="$HOME"
+
+HOMECLEAN_CRON=false
+
+# READ .homecleanrc
+
+[ -f "$HOME/.homecleanrc" ] && . "$HOME/.homecleanrc"
+
+# READ OPTIONS
+
+option=""
+
+for argument in "$@"
+do
+    case $option in
+        "-a")
+            HOMECLEAN_NOT_ACCESSED=$1
+            option=""
+            ;;
+        "-c")
+            HOMECLEAN_NOT_CREATED=$1
+            option=""
+            ;;
+        "")
+            case $1 in
+                "-a" | "-c")
+                    option=$1;
+                    ;;
+                "--not-accessed=*")
+                    HOMECLEAN_NOT_ACCESSED="${1#*=}"
+                    ;;
+                "--not-created=*")
+                    HOMECLEAN_NOT_CREATED="${1#*=}"
+                    ;;
+                "--ignore=*")
+                    HOMECLEAN_IGNORE="${1#*=}"
+                    ;;
+                "--include=*")
+                    HOMECLEAN_INCLUDE="${1#*=}"
+                    ;;
+                "-I" | "--invert")
+                    HOMECLEAN_INVERT=true
+                    ;;
+                "--trash")
+                    HOMECLEAN_BEHAVIOR="trash"
+                    ;;
+                "--trash=*")
+                    HOMECLEAN_BEHAVIOR="trash"
+                    HOMECLEAN_TRASH="${1#*=}"
+                    ;;
+                "--delete")
+                    HOMECLEAN_BEHAVIOR="delete"
+                    ;;
+                "-d" | "--dry")
+                    HOMECLEAN_BEHAVIOR="dry"
+                    ;;
+                "-p" | "--preserve-hierarchy")
+                    HOMECLEAN_TRASH_HIERARCHY="preserve"
+                    ;;
+                "-l" | "--lose-hierarchy")
+                    HOMECLEAN_TRASH_HIERARCHY="lose"
+                    ;;
+                "--cron")
+                    HOMECLEAN_CRON=true
+                    ;;
+                
+                # Invalid options
+                
+                "--not-accessed" | "--not-created" | "--ignore" | "--include")
+                    echo "Option '$1' requires a value ('$1=VALUE')."
+                    echo "Use '-h' for help."
+                    exit 1
+                    ;;
+                *)
+                    echo "Invalid option '$1'. Use '-h' for help."
+                    exit 1
+                    ;;
+            esac
+            ;;
+    esac
+    shift
+done
