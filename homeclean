@@ -9,15 +9,37 @@
 
 VERSION="1.0-beta"
 
-# SET ALIASES FOR SECURITY
+# ERROR EXITS
 
-alias echo="/usr/bin/echo" printf="/usr/bin/prinf"
+function exit_invalid_option() {
+    echo "Invalid option '$1'."
+    echo "Invoke '-h' or '--help' for help."
+    exit 1
+}
+
+function exit_requires() {
+    echo "Option '$1' requires $2."
+    echo "Invoke '-h' or '--help' for help."
+    exit 1
+}
+
+function exit_does_not_require() {
+    echo "Option '$1' does not require a value."
+    echo "Invoke '-h' or '--help' for help."
+    exit 1
+}
+
+function exit_generic_option() {
+    echo "Generic option '$1' must not be used with other options."
+    echo "Invoke '-h' or '--help' for help."
+    exit 1
+}
 
 # GENERIC OPTIONS
 
-case "$1" in
+[ $# -eq 1 ] && case "$1" in
     "-h" | "--help")
-        echo "\
+        echo -e "\
 homeclean - Clean your Linux computer's home directory.
 
 Usage: homeclean GENERIC_OPTION
@@ -31,39 +53,48 @@ Generic options:
 Options:
 
   -a, --not-accessed=N       Delete files that haven't been accessed in the last
-                             N days (default: 365).
-  -c, --not-created=N        Delete files that weren't created in the last N
-                             days (default: 365).
+                             N (default: 365) days.
       --ignore=PATHS         Define an ignore pattern. PATHS can include
                              multiple paths delimited by the colon (':') and
                              each path can include wildcards. This overrides
                              .homecleanignore.
       --include=PATHS        Define an include pattern. This overrides
                              .homecleaninclude.
-  -I, --invert               Invert selection of files.
+      --ignore-hidden=TYPE   Ignore hidden files and directories. TYPE can be:
+                               * 'all', to ignore all hidden items;
+                               * 'root', to ignore hidden files and directories
+                                  in your home directory's root;
+                               * 'directories', to ignore hidden directories; OR
+                               * 'files', to ignore hidden files.
+  -R, --recursive            Search for files recursively (default).
+  -N, --non-recursive        Search for files non-recursively.
+  -I, --invert               Invert selection of files. Using this option twice
+                             is the same as not using it.
       --trash[=TRASH_PATH]   Move files to trash (default). If TRASH_PATH is
                              set, use it instead of HOMECLEAN_TRASH.
       --delete               Delete files permanently.
   -d, --dry                  Only print selection, do not trash or delete.
+      --show-config          Only print configuration, do not trash or delete.
   -p, --preserve-hierarchy   Preserve directory hierarchy in trash (default).
   -l, --lose-hierarchy       Don't preserve the hierarchy in trash.
-      --cron                 Don't prompt. For use as a cronjob.
+  -c, --cron                 Don't prompt. For use as a cronjob.
 
 Variables:
 
-  HOMECLEAN_NOT_ACCESSED     Equivalent to '--not-accessed' and is overridden
-                             by this option.
-  HOMECLEAN_NOT_CREATED      Equivalent to '--not-created' and is overridden
-                             by this option.
-  HOMECLEAN_INVERT           Equivalent to '--invert' and is overridden by this
-                             option. Can be 'true' or 'false'.
+  HOMECLEAN_NOT_ACCESSED     If set to N, search for files that haven't been
+                             accessed in the last N days. Default: 365.
+  HOMECLEAN_IGNORE_HIDDEN    Can be 'all', 'root', 'directories', or 'files'. If
+                             set to an empty string (default), ignore visibility
+                             as a search criterion. See '--ignore-hidden' above.
+  HOMECLEAN_SEARCH_MODE      Can be 'recursive' or 'non-recursive'.
+  HOMECLEAN_INVERT           Can be true or false. If set to true, invert
+                             selection of files.
   HOMECLEAN_BEHAVIOR         What to do to files. Can be 'trash' (default),
                              'delete', or 'dry'.
-  HOMECLEAN_TRASH            Path to trash. Can be overridden by '--trash'.
-  HOMECLEAN_TRASH_HIERARCHY  If set to 'true' or 'preserve', preserve the
-                             directory hierarchy of files when they are trashed.
-                             If set to 'false' or 'lose', the hierarchy will not
-                             be preserved.
+  HOMECLEAN_TRASH            Path to trash. Default: '~/.homecleantrash'.
+  HOMECLEAN_TRASH_HIERARCHY  Can be 'preserve' (default) or 'lose'. See options
+                             '-p' and '-l' above.
+  HOMECLEAN_CRON             Can be true or false. If set to true, don't prompt.
 
 Files:
 
@@ -81,106 +112,164 @@ Files:
 ALWAYS ignored: .bashrc, .bash_profile, .bash_logout, .bash_history"
         exit 0
         ;;
-    
+
     "-v" | "--version")
         echo $VERSION
         exit 0
         ;;
+
+    "--help="* | "--version="*)
+        exit_does_not_require "$( echo "$1" | sed 's/=.*//' )";;
 esac
-
-# SET EVEN MORE ALIASES FOR MORE SECURITY
-
-alias find="/usr/bin/find"
 
 # SET DEFAULT VALUES
 
 HOMECLEAN_NOT_ACCESSED=365
-HOMECLEAN_NOT_CREATED=365
+HOMECLEAN_IGNORE_HIDDEN=""
+HOMECLEAN_SEARCH_MODE="recursive"
 HOMECLEAN_INVERT=false
 HOMECLEAN_BEHAVIOR="trash"
 HOMECLEAN_TRASH="$HOME/.homecleantrash"
 HOMECLEAN_TRASH_HIERARCHY="preserve"
-
 HOMECLEAN_IGNORE=""
 HOMECLEAN_INCLUDE="$HOME"
-
 HOMECLEAN_CRON=false
+
+# Variables that should not be exposted to the end-user
+
+HOMECLEAN_SHOW_CONFIG=false
+HOMECLEAN_ALWAYS_IGNORE=".bashrc:.bash_profile:.bash_logout:.bash_history"
 
 # READ .homecleanrc
 
 [ -f "$HOME/.homecleanrc" ] && . "$HOME/.homecleanrc"
 
+HOMECLEAN_IGNORE="$HOMECLEAN_ALWAYS_IGNORE:$HOMECLEAN_IGNORE"
+
 # READ OPTIONS
 
-option=""
+shopt -s extglob
 
 for argument in "$@"
 do
-    case $option in
-        "-a")
-            HOMECLEAN_NOT_ACCESSED=$1
-            option=""
+    case "$1" in
+
+        # Short options that require values
+
+        "-a"*)
+            value=${1#*a}
+            [[ -z "$value" ]] && value="$2" && shift
+
+            [[ "$value" =~ ^\+?[0-9]+(\.[0-9]+)?$ ]] \
+                && HOMECLEAN_NOT_ACCESSED="$value"   \
+                || exit_requires "-a" "a positive number"
             ;;
-        "-c")
-            HOMECLEAN_NOT_CREATED=$1
-            option=""
+
+        # Short options that don't require values & long options
+
+        "--not-accessed="+)            HOMECLEAN_NOT_ACCESSED="${1#*=}";;
+        "--ignore="+)                  HOMECLEAN_IGNORE="${1#*=}";;
+        "--include="+)                 HOMECLEAN_INCLUDE="${1#*=}";;
+        "--ignore-hidden="+)           HOMECLEAN_IGNORE_HIDDEN="${1#*=}";;
+        "-R" | "--recursive")          HOMECLEAN_SEARCH_MODE="recursive";;
+        "-N" | "--non-recursive")      HOMECLEAN_SEARCH_MODE="non-recursive";;
+        "-I" | "--invert")
+            HOMECLEAN_INVERT=$(\
+                [ "$HOMECLEAN_INVERT" = true ] && echo "false" || echo "true" \
+            );;
+        "--trash")                     HOMECLEAN_BEHAVIOR="trash";;
+        "--trash="+)                   HOMECLEAN_BEHAVIOR="trash"
+                                       HOMECLEAN_TRASH="${1#*=}";;
+        "--delete")                    HOMECLEAN_BEHAVIOR="delete";;
+        "-d" | "--dry")                HOMECLEAN_BEHAVIOR="dry";;
+        "--show-config")               HOMECLEAN_SHOW_CONFIG=true;;
+        "-p" | "--preserve-hierarchy") HOMECLEAN_TRASH_HIERARCHY="preserve";;
+        "-l" | "--lose-hierarchy")     HOMECLEAN_TRASH_HIERARCHY="lose";;
+        "-c" | "--cron")               HOMECLEAN_CRON=true;;
+
+        # Shorthands
+
+        "-"+([RNIdplchv])?(a?(?("+")+([0-9])*(.+([0-9])))*))
+            for (( i = 1; i < ${#1}; i ++ ))
+            do
+                case "${1:$i:1}" in
+                    "R") HOMECLEAN_SEARCH_MODE="recursive";;
+                    "N") HOMECLEAN_SEARCH_MODE="non-recursive";;
+                    "I")
+                        HOMECLEAN_INVERT=$(\
+                            [ "$HOMECLEAN_INVERT" = true ]     \
+                                && echo "false" || echo "true" \
+                        );;
+                    "d") HOMECLEAN_BEHAVIOR="dry";;
+                    "p") HOMECLEAN_TRASH_HIERARCHY="preserve";;
+                    "l") HOMECLEAN_TRASH_HIERARCHY="lose";;
+                    "c") HOMECLEAN_CRON=true;;
+                    "a")
+                        value=${1#*a}
+                        [[ -z "$value" ]] && value="$2" && shift
+
+                        if [[ "$value" =~ ^\+?[0-9]+(\.[0-9]+)?$ ]]
+                        then
+                            HOMECLEAN_NOT_ACCESSED="$value"
+                        else
+                            exit_requires "-a" "a positive number"
+                        fi
+                        ;;
+                    "h" | "v")
+                        exit_generic_option "-${1:$i:1}"
+                        ;;
+                esac
+            done
             ;;
-        "")
-            case $1 in
-                "-a" | "-c")
-                    option=$1;
-                    ;;
-                "--not-accessed=*")
-                    HOMECLEAN_NOT_ACCESSED="${1#*=}"
-                    ;;
-                "--not-created=*")
-                    HOMECLEAN_NOT_CREATED="${1#*=}"
-                    ;;
-                "--ignore=*")
-                    HOMECLEAN_IGNORE="${1#*=}"
-                    ;;
-                "--include=*")
-                    HOMECLEAN_INCLUDE="${1#*=}"
-                    ;;
-                "-I" | "--invert")
-                    HOMECLEAN_INVERT=true
-                    ;;
-                "--trash")
-                    HOMECLEAN_BEHAVIOR="trash"
-                    ;;
-                "--trash=*")
-                    HOMECLEAN_BEHAVIOR="trash"
-                    HOMECLEAN_TRASH="${1#*=}"
-                    ;;
-                "--delete")
-                    HOMECLEAN_BEHAVIOR="delete"
-                    ;;
-                "-d" | "--dry")
-                    HOMECLEAN_BEHAVIOR="dry"
-                    ;;
-                "-p" | "--preserve-hierarchy")
-                    HOMECLEAN_TRASH_HIERARCHY="preserve"
-                    ;;
-                "-l" | "--lose-hierarchy")
-                    HOMECLEAN_TRASH_HIERARCHY="lose"
-                    ;;
-                "--cron")
-                    HOMECLEAN_CRON=true
-                    ;;
-                
-                # Invalid options
-                
-                "--not-accessed" | "--not-created" | "--ignore" | "--include")
-                    echo "Option '$1' requires a value ('$1=VALUE')."
-                    echo "Use '-h' for help."
-                    exit 1
-                    ;;
-                *)
-                    echo "Invalid option '$1'. Use '-h' for help."
-                    exit 1
-                    ;;
-            esac
+
+        # End of options symbol
+
+        "--") shift && break;;
+
+        # Invalid options
+
+        "-h" | "-v" | "--help"?(=*) | "--version"?(=*))
+            exit_generic_option "$( echo "$1" | sed 's/=.*//' )"
             ;;
+
+        "--"@("not-accessed"|"not-created"|"ignore"|"include")?(=))
+            exit_requires "$( echo "$1" | sed 's/=.*//' )" "a value"
+            ;;
+
+        "--"@("recursive"|"non-recursive"|"invert"|"delete"|"dry"|"show-config"\
+        |"preserve-hierarchy"|"lose-hierarchy"|"cron")"="*)
+            exit_does_not_require "$( echo "$1" | sed 's/=.*//' )"
+            ;;
+
+        "-"!(+([RNIdplchv])?(a?(?("+")+([0-9])*(.+([0-9])))*)))
+            for (( i = 1; i < ${#1}; i ++ ))
+            do
+                if ! [[ "${1:$i:1}" =~ [RNIdplcahv] ]]
+                then
+                    exit_invalid_option "-${1:$i:1}"
+                fi
+            done
+            ;;
+
+        "") break;;
+        *) exit_invalid_option "$1";;
     esac
+
     shift
 done
+
+# SHOW CONFIG
+
+if [ "$HOMECLEAN_SHOW_CONFIG" = true ]
+then
+    echo "\
+HOMECLEAN_NOT_ACCESSED     =  $HOMECLEAN_NOT_ACCESSED
+HOMECLEAN_IGNORE_HIDDEN    =  $HOMECLEAN_IGNORE_HIDDEN
+HOMECLEAN_SEARCH_MODE      =  $HOMECLEAN_SEARCH_MODE
+HOMECLEAN_INVERT           =  $HOMECLEAN_INVERT
+HOMECLEAN_BEHAVIOR         =  $HOMECLEAN_BEHAVIOR
+HOMECLEAN_TRASH            =  $HOMECLEAN_TRASH
+HOMECLEAN_TRASH_HIERARCHY  =  $HOMECLEAN_TRASH_HIERARCHY
+HOMECLEAN_CRON             =  $HOMECLEAN_CRON"
+    exit 0
+fi
