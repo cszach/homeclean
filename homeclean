@@ -430,7 +430,9 @@ fi
 FIND_OUTPUT=$( eval "$FIND_COMMAND" )
 
 # If FIND_OUTPUT is empty, there is nothing to do.
-[ -z "$FIND_OUTPUT" ] && exit 0
+[ -z "$FIND_OUTPUT" ] \
+    && echo "No files to clean." \
+    && exit 0
 
 # PROCESS OUTPUT
 #
