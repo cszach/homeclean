@@ -102,7 +102,8 @@ Files:
                              home directory with the exception of ignored paths.
   .homecleantrash            Directory where trashed files are stored.
 
-ALWAYS ignored: .bashrc, .bash_profile, .bash_logout, .bash_history"
+ALWAYS ignored: .bashrc, .bash_profile, .bash_logout, .bash_history,
+                HOMECLEAN_TRASH"
         exit 0
         ;;
 
@@ -136,6 +137,7 @@ $HOME/.bashrc
 $HOME/.bash_profile
 $HOME/.bash_logout
 $HOME/.bash_history
+$HOMECLEAN_TRASH
 " # If this list is modified, be sure to update the help info too.
 
 # Internal variables
@@ -427,6 +429,9 @@ fi
 
 FIND_OUTPUT=$( eval "$FIND_COMMAND" )
 
+# If FIND_OUTPUT is empty, there is nothing to do.
+[ -z "$FIND_OUTPUT" ] && exit 0
+
 # PROCESS OUTPUT
 #
 # Process the output ($FIND_OUTPUT) based on the following variables:
@@ -464,11 +469,13 @@ amount_cleaned=0
 
 while read -r file
 do
+    amount_cleaned=$(( amount_cleaned + $( stat -c%s "$file" ) ))
+
     if [ "$HOMECLEAN_BEHAVIOR" = "trash" ]
     then
         if [ "$HOMECLEAN_TRASH_HIERARCHY" = "preserve" ]
         then
-            TRASH_PATH="$HOMECLEAN_TRASH/$( dirname $( readlink "$file" ) )"
+            TRASH_PATH="$HOMECLEAN_TRASH/$( dirname "$( readlink -e "$file" )" )"
             mkdir -p "$TRASH_PATH"
             mv "$file" "$TRASH_PATH"
         else
@@ -477,8 +484,6 @@ do
     else
         rm -rf "$file"
     fi
-
-    amount_cleaned=$(( amount_cleaned + $( stat -c%s "$file" ) ))
 done <<< "$FIND_OUTPUT"
 
 # Print the amount of space cleaned in bytes if the total amount is smaller than
