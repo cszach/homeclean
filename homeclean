@@ -7,7 +7,7 @@
 #
 #     https://creativecommons.org/publicdomain/zero/1.0
 
-VERSION="1.0-beta"
+VERSION="0.1.0-alpha"
 EXEC_NAME=$( basename $( readlink -f "$0" ) )
 
 # ERROR EXITS
@@ -63,13 +63,13 @@ Options:
                                * 'files', to ignore hidden files.
   -R, --recursive            Search for files recursively (default).
   -N, --non-recursive        Search for files non-recursively.
-  -I, --invert               Invert selection of files. Using this option twice
-                             is the same as not using it.
       --trash[=PATH]         Move files to trash (default). If PATH is set, use
                              it instead of HOMECLEAN_TRASH.
   -x, --delete               Delete files permanently.
   -d, --dry                  Only print selection, do not trash or delete.
       --show-config          Only print configuration, do not trash or delete.
+      --show-command         Only print the command that would be used to find
+                             files, do not trash or delete.
       --export-config[=FILE] Export current configuration to FILE. If FILE isn't
                              set, export to ~/.homecleanrc.
   -p, --preserve-hierarchy   Preserve directory hierarchy in trash (default).
@@ -84,8 +84,6 @@ Variables:
                              set to an empty string (default), ignore visibility
                              as a search criterion. See '--ignore-hidden' above.
   HOMECLEAN_SEARCH_MODE      Can be 'recursive' or 'non-recursive'.
-  HOMECLEAN_INVERT           Can be true or false. If set to true, invert
-                             selection of files.
   HOMECLEAN_BEHAVIOR         What to do to files. Can be 'trash' (default),
                              'delete', or 'dry'.
   HOMECLEAN_TRASH            Path to trash. Default: '~/.homecleantrash'.
@@ -124,7 +122,6 @@ esac
 HOMECLEAN_NOT_ACCESSED=365
 HOMECLEAN_IGNORE_HIDDEN=""
 HOMECLEAN_SEARCH_MODE="recursive"
-HOMECLEAN_INVERT=false
 HOMECLEAN_BEHAVIOR="trash"
 HOMECLEAN_TRASH="$HOME/.homecleantrash"
 HOMECLEAN_TRASH_HIERARCHY="preserve"
@@ -132,18 +129,53 @@ HOMECLEAN_TRASH_HIERARCHY="preserve"
 # Private variables
 
 HOMECLEAN_SHOW_CONFIG=false
+HOMECLEAN_SHOW_COMMAND=false
 HOMECLEAN_EXPORT_CONFIG=false
 HOMECLEAN_EXPORT_CONFIG_FILE="$HOME/.homecleanrc"
 HOMECLEAN_CRON=false
 HOMECLEAN_ALWAYS_IGNORE="\
-.bashrc
-.bash_profile
-.bash_logout
-.bash_history"
+$HOME/.bashrc
+$HOME/.bash_profile
+$HOME/.bash_logout
+$HOME/.bash_history
+" # If this list is modified, be sure to update the help info too.
+
+# Internal variables
+
+HOMECLEAN_IGNORE=$HOMECLEAN_ALWAYS_IGNORE # List of ignored files
+HOMECLEAN_INCLUDE=$HOME # List of included files (override $HOME)
 
 # READ .homecleanrc
 
 [ -f "$HOME/.homecleanrc" ] && . "$HOME/.homecleanrc"
+
+# A helper function to read .homecleanignore and .homecleaninclude. Empty lines
+# and comments (lines starting with '#') are ignored. The rest is echoed to
+# stdout.
+#
+# :param $1: File name
+function read_dot_file() {
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue # Ignore empty lines
+        [ "${line:0:1}" = "#" ] && continue # Ignore comments
+
+        echo "$line"
+    done < "$1"
+}
+
+# READ .homecleanignore
+
+[ -f "$HOME/.homecleanignore" ] \
+    && HOMECLEAN_IGNORE="$HOMECLEAN_IGNORE$( read_dot_file "$HOME/.homecleanignore" )"
+
+# echo "HOMECLEAN_IGNORE: $HOMECLEAN_IGNORE"
+
+# READ .homecleaninclude
+
+[ -f "$HOME/.homecleaninclude" ] \
+    && HOMECLEAN_INCLUDE=$( read_dot_file "$HOME/.homecleaninclude" )
+
+# echo "HOMECLEAN_INCLUDE: $HOMECLEAN_INCLUDE"
 
 # READ OPTIONS
 
@@ -200,14 +232,11 @@ do
 
         "-R" | "--recursive"          ) HOMECLEAN_SEARCH_MODE="recursive";;
         "-N" | "--non-recursive"      ) HOMECLEAN_SEARCH_MODE="non-recursive";;
-        "-I" | "--invert")
-            HOMECLEAN_INVERT=$(\
-                [ "$HOMECLEAN_INVERT" = true ] && echo "false" || echo "true" \
-            );;
                "--trash"              ) HOMECLEAN_BEHAVIOR="trash";;
         "-x" | "--delete"             ) HOMECLEAN_BEHAVIOR="delete";;
         "-d" | "--dry"                ) HOMECLEAN_BEHAVIOR="dry";;
                "--show-config"        ) HOMECLEAN_SHOW_CONFIG=true;;
+               "--show-command"       ) HOMECLEAN_SHOW_COMMAND=true;;
                "--export-config"      ) HOMECLEAN_EXPORT_CONFIG=true;;
         "-p" | "--preserve-hierarchy" ) HOMECLEAN_TRASH_HIERARCHY="preserve";;
         "-l" | "--lose-hierarchy"     ) HOMECLEAN_TRASH_HIERARCHY="lose";;
@@ -228,8 +257,8 @@ do
 
             exit_requires "$( echo "$1" | sed 's/=.*//' )" "a value";;
 
-        "--"@("recursive"|"non-recursive"|"invert"|"delete"|"dry"|"show-config"\
-        |"preserve-hierarchy"|"lose-hierarchy"|"cron")"="*)
+        "--"@("recursive"|"non-recursive"|"delete"|"dry"|"show-config"\
+        |"show-command"|"preserve-hierarchy"|"lose-hierarchy"|"cron")"="*)
 
             exit_does_not_require "$( echo "$1" | sed 's/=.*//' )";;
 
@@ -237,17 +266,12 @@ do
 
         # Shorthands
 
-        "-"*([RNIxdplc])?(a?(?("+")+([0-9])*(.+([0-9])))*))
+        "-"*([RNxdplc])?(a?(?("+")+([0-9])*(.+([0-9])))*))
             for (( i = 1; i < ${#1}; i ++ ))
             do
                 case "${1:$i:1}" in
                     "R") HOMECLEAN_SEARCH_MODE="recursive";;
                     "N") HOMECLEAN_SEARCH_MODE="non-recursive";;
-                    "I")
-                        HOMECLEAN_INVERT=$(\
-                            [ "$HOMECLEAN_INVERT" = true ]     \
-                                && echo "false" || echo "true" \
-                        );;
                     "x") HOMECLEAN_BEHAVIOR="delete";;
                     "d") HOMECLEAN_BEHAVIOR="dry";;
                     "p") HOMECLEAN_TRASH_HIERARCHY="preserve";;
@@ -270,7 +294,7 @@ do
 
         # Invalid shorthands & arguments
 
-        "-"!(*([RNIxdplc])?(a?(?("+")+([0-9])*(.+([0-9])))*)))
+        "-"!(*([RNxdplc])?(a?(?("+")+([0-9])*(.+([0-9])))*)))
 
             for (( i = 1; i < ${#1}; i ++ ))
             do
@@ -298,7 +322,6 @@ then
 HOMECLEAN_NOT_ACCESSED=$HOMECLEAN_NOT_ACCESSED
 HOMECLEAN_IGNORE_HIDDEN=\"$HOMECLEAN_IGNORE_HIDDEN\"
 HOMECLEAN_SEARCH_MODE=\"$HOMECLEAN_SEARCH_MODE\"
-HOMECLEAN_INVERT=$HOMECLEAN_INVERT
 HOMECLEAN_BEHAVIOR=\"$HOMECLEAN_BEHAVIOR\"
 HOMECLEAN_TRASH=\"$HOMECLEAN_TRASH\"
 HOMECLEAN_TRASH_HIERARCHY=\"$HOMECLEAN_TRASH_HIERARCHY\"\
@@ -313,10 +336,134 @@ then
 HOMECLEAN_NOT_ACCESSED     =  $HOMECLEAN_NOT_ACCESSED
 HOMECLEAN_IGNORE_HIDDEN    =  $HOMECLEAN_IGNORE_HIDDEN
 HOMECLEAN_SEARCH_MODE      =  $HOMECLEAN_SEARCH_MODE
-HOMECLEAN_INVERT           =  $HOMECLEAN_INVERT
 HOMECLEAN_BEHAVIOR         =  $HOMECLEAN_BEHAVIOR
 HOMECLEAN_TRASH            =  $HOMECLEAN_TRASH
 HOMECLEAN_TRASH_HIERARCHY  =  $HOMECLEAN_TRASH_HIERARCHY"
 
     exit 0
 fi
+
+# PREPARE FIND COMMAND
+
+# Prepare the ignore options for the find command, which ignore the files and
+# directories in $HOMECLEAN_IGNORE.
+
+HOMECLEAN_IGNORE_OPTS="$( echo "$HOMECLEAN_IGNORE" | sed 's/^/  -path "/;s/$/" -prune -o/' )"
+HOMECLEAN_IGNORE_OPTS="${HOMECLEAN_IGNORE_OPTS%-o}"
+HOMECLEAN_IGNORE_OPTS="$( echo "$HOMECLEAN_IGNORE_OPTS" )"
+
+# Start by building the include and ignore
+
+FIND_COMMAND="find $( echo $HOMECLEAN_INCLUDE | tr '\n' ' ' ) \(\n$HOMECLEAN_IGNORE_OPTS\\)"
+
+# Compile search criteria
+#
+# Search criterion are derived from these variables:
+# * HOMECLEAN_NOT_ACCESSED: integer
+# * HOMECLEAN_IGNORE_HIDDEN: 'all', 'root', 'directories', 'files', ''
+# * HOMECLEAN_SEARCH_MODE: 'recursive', 'non-recursive'
+
+FIND_COMMAND="$FIND_COMMAND"
+
+search_criteria="-o -atime +$HOMECLEAN_NOT_ACCESSED"
+
+if [ "$HOMECLEAN_SEARCH_MODE" = "non-recursive" ]
+then
+    search_criteria="$search_criteria -maxdepth 1"
+fi
+
+FIND_COMMAND="$FIND_COMMAND\n  $search_criteria"
+
+# Finally, make the command multiple lines in the command line by replacing all
+# newline characters with \
+
+FIND_COMMAND="$( echo -e "$FIND_COMMAND" | sed 's/$/ \\/' )"
+FIND_COMMAND="${FIND_COMMAND%\\}"
+
+# EXECUTE FIND COMMAND
+# Execute the find command and store the output in a variable.
+
+FIND_COMMAND="$( echo -e "$FIND_COMMAND" )"
+
+if [ "$HOMECLEAN_SHOW_COMMAND" = true ]
+then
+    echo "$FIND_COMMAND"
+    exit 0
+fi
+
+FIND_OUTPUT=$( eval "$FIND_COMMAND" )
+
+# PROCESS OUTPUT
+#
+# Process the output ($FIND_OUTPUT) based on the following variables:
+# * HOMECLEAN_BEHAVIOR: 'trash', 'delete', 'dry'
+# * HOMECLEAN_TRASH: path to trash directory
+# * HOMECLEAN_TRASH_HIERARCHY: 'preserve', 'lose'
+# * HOMECLEAN_CRON: boolean
+
+if [ "$HOMECLEAN_BEHAVIOR" = "dry" ]
+then
+    echo "$FIND_OUTPUT"
+    exit 0
+fi
+
+if [ "$HOMECLEAN_CRON" = false ]
+then
+    echo "The following files and directories will be deleted:"
+    echo "$FIND_OUTPUT"
+
+    echo -n "Are you sure you want to continue? [y/N] "
+    read confirm
+
+    case "$confirm" in
+        [yY][eE][sS]|[yY])
+            ;;
+        *)
+            echo "Aborting."
+            exit 0
+    esac
+fi
+
+# Delete/trash the files
+
+amount_cleaned=0
+
+while read -r file
+do
+    if [ "$HOMECLEAN_BEHAVIOR" = "trash" ]
+    then
+        if [ "$HOMECLEAN_TRASH_HIERARCHY" = "preserve" ]
+        then
+            TRASH_PATH="$HOMECLEAN_TRASH/$( dirname $( readlink "$file" ) )"
+            mkdir -p "$TRASH_PATH"
+            mv "$file" "$TRASH_PATH"
+        else
+            mv "$file" "$HOMECLEAN_TRASH"
+        fi
+    else
+        rm -rf "$file"
+    fi
+
+    amount_cleaned=$(( amount_cleaned + $( stat -c%s "$file" ) ))
+done <<< "$FIND_OUTPUT"
+
+# Print the amount of space cleaned in bytes if the total amount is smaller than
+# 1KB, or in KB if the total amount is smaller than 1MB, or in MB if the total
+# amount is smaller than 1GB, or in GB otherwise.
+
+if [ $amount_cleaned -lt 1024 ]
+then
+    amount_cleaned="${amount_cleaned} bytes"
+elif [ $amount_cleaned -lt 1048576 ] # 1024^2
+then
+    amount_cleaned="$(( amount_cleaned / 1024 )) KiB"
+elif [ $amount_cleaned -lt 1073741824 ] # 1024^3
+then
+    amount_cleaned="$(( amount_cleaned / 1048576 )) MiB"
+else
+    amount_cleaned="$(( amount_cleaned / 1073741824 )) GiB"
+fi
+
+echo "Cleaned $amount_cleaned."
+
+exit 0
