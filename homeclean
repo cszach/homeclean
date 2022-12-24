@@ -57,8 +57,6 @@ Options:
                              N (default: 365) days.
       --ignore-hidden=TYPE   Ignore hidden files and directories. TYPE can be:
                                * 'all', to ignore all hidden items;
-                               * 'root', to ignore hidden files and directories
-                                  in your home directory's root;
                                * 'directories', to ignore hidden directories; OR
                                * 'files', to ignore hidden files.
   -R, --recursive            Search for files recursively (default).
@@ -80,9 +78,9 @@ Variables:
 
   HOMECLEAN_NOT_ACCESSED     If set to N, search for files that haven't been
                              accessed in the last N days. Default: 365.
-  HOMECLEAN_IGNORE_HIDDEN    Can be 'all', 'root', 'directories', or 'files'. If
-                             set to an empty string (default), ignore visibility
-                             as a search criterion. See '--ignore-hidden' above.
+  HOMECLEAN_IGNORE_HIDDEN    Can be 'all', 'directories', or 'files'. If set to
+                             an empty string (default), ignore visibility as a
+                             search criterion. See '--ignore-hidden' above.
   HOMECLEAN_SEARCH_MODE      Can be 'recursive' or 'non-recursive'.
   HOMECLEAN_BEHAVIOR         What to do to files. Can be 'trash' (default),
                              'delete', or 'dry'.
@@ -205,7 +203,7 @@ do
 
         "--ignore-hidden"?(=*))
 
-            [[ "${1#*=}" =~ ^(all|root|directories|files)$ ]]  \
+            [[ "${1#*=}" =~ ^(all|directories|files)$ ]]  \
                 && HOMECLEAN_IGNORE_HIDDEN="${1#*=}"           \
                 || exit_requires "--ignore-hidden" "a valid type"
                 ;;
@@ -360,7 +358,7 @@ do
         HOMECLEAN_IGNORE_FILES="$HOMECLEAN_IGNORE_FILES\n$file"
     elif [ -d "$file" ]
     then
-        HOMECLEAN_IGNORE_DIRS="$HOMECLEAN_IGNORE_DIRS\n$file"
+        HOMECLEAN_IGNORE_DIRS="$HOMECLEAN_IGNORE_DIRS\n${file%/}"
     fi
 done <<< "$HOMECLEAN_IGNORE"
 
@@ -386,7 +384,7 @@ FIND_COMMAND="$FIND_COMMAND\n$HOMECLEAN_IGNORE_FILES_OPTS"
 #
 # Search criterion are derived from these variables:
 # * HOMECLEAN_NOT_ACCESSED: integer
-# * HOMECLEAN_IGNORE_HIDDEN: 'all', 'root', 'directories', 'files', ''
+# * HOMECLEAN_IGNORE_HIDDEN: 'all', 'directories', 'files', ''
 # * HOMECLEAN_SEARCH_MODE: 'recursive', 'non-recursive'
 
 search_criteria="-atime +$HOMECLEAN_NOT_ACCESSED"
@@ -395,6 +393,18 @@ if [ "$HOMECLEAN_SEARCH_MODE" = "non-recursive" ]
 then
     search_criteria="$search_criteria -maxdepth 1"
 fi
+
+case "$HOMECLEAN_IGNORE_HIDDEN" in
+    "all")
+        search_criteria="$search_criteria -not -path '**/.*'"
+        ;;
+    "directories")
+        search_criteria="$search_criteria -not -path '**/.*/**'"
+        ;;
+    "files")
+        search_criteria="$search_criteria -not -name '.*'"
+        ;;
+esac
 
 FIND_COMMAND="$FIND_COMMAND\n  $search_criteria\n  -print"
 
