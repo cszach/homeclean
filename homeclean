@@ -7,7 +7,7 @@
 #
 #     https://creativecommons.org/publicdomain/zero/1.0
 
-VERSION="0.1.0-alpha"
+VERSION="0.1.0-dev"
 EXEC_NAME=$( basename $( readlink -f "$0" ) )
 
 # ERROR EXITS
@@ -370,7 +370,6 @@ done <<< "$HOMECLEAN_IGNORE"
 HOMECLEAN_IGNORE_FILES_OPTS="$( \
     echo -e "$HOMECLEAN_IGNORE_FILES" \
     | sed '/^$/d;s/^/  -not -path "/;s/$/"/' )"
-HOMECLEAN_IGNORE_FILES_OPTS="${HOMECLEAN_IGNORE_FILES_OPTS%-o}"
 
 HOMECLEAN_IGNORE_DIRS_OPTS="$( \
     echo -e "$HOMECLEAN_IGNORE_DIRS" \
@@ -403,7 +402,7 @@ FIND_COMMAND="$FIND_COMMAND\n  $search_criteria\n  -print"
 # newline characters with \
 
 FIND_COMMAND="$( echo -e "$FIND_COMMAND" | sed 's/$/ \\/' )"
-FIND_COMMAND="${FIND_COMMAND%\\}"
+FIND_COMMAND="${FIND_COMMAND%\\}" # except the last line
 
 # EXECUTE FIND COMMAND
 # Execute the find command and store the output in a variable.
@@ -455,19 +454,19 @@ amount_cleaned=0
 
 while read -r file
 do
-    # if [ "$HOMECLEAN_BEHAVIOR" = "trash" ]
-    # then
-    #     if [ "$HOMECLEAN_TRASH_HIERARCHY" = "preserve" ]
-    #     then
-    #         TRASH_PATH="$HOMECLEAN_TRASH/$( dirname $( readlink "$file" ) )"
-    #         mkdir -p "$TRASH_PATH"
-    #         mv "$file" "$TRASH_PATH"
-    #     else
-    #         mv "$file" "$HOMECLEAN_TRASH"
-    #     fi
-    # else
-    #     rm -rf "$file"
-    # fi
+    if [ "$HOMECLEAN_BEHAVIOR" = "trash" ]
+    then
+        if [ "$HOMECLEAN_TRASH_HIERARCHY" = "preserve" ]
+        then
+            TRASH_PATH="$HOMECLEAN_TRASH/$( dirname $( readlink "$file" ) )"
+            mkdir -p "$TRASH_PATH"
+            mv "$file" "$TRASH_PATH"
+        else
+            mv "$file" "$HOMECLEAN_TRASH"
+        fi
+    else
+        rm -rf "$file"
+    fi
 
     amount_cleaned=$(( amount_cleaned + $( stat -c%s "$file" ) ))
 done <<< "$FIND_OUTPUT"
