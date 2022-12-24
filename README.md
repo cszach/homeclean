@@ -10,6 +10,19 @@ been accessed for a long time (by default, 365 days). Written in GNU Bash.
 `homeclean` is in alpha stage! Please help me by reporting any issue
 [here](https://github.com/cszach/homeclean/issues). Thank you!
 
+Table of content
+----------------
+
+1. [Download](#download)
+2. [Use](#use)
+   1. [Getting started](#getting-started)
+   2. [Clean behavior](#clean-behavior)
+   3. [Configure](#configure)
+   4. [`.homecleaninclude`](#homecleaninclude)
+   5. [Miscellaneous options](#miscellaneous-options)
+   6. [Help information](#help-information)
+3. [To-do](#to-do)
+
 Download
 --------
 
@@ -160,7 +173,7 @@ homeclean --show-command > script.sh
   or use it in your scripts, like this:
 
 ```bash
-OLD_FILES=$( eval $( homeclean --show-command ) )
+OLD_FILES=$( eval "$( homeclean --show-command )" )
 ```
 
 - Using `--cron` means `homeclean` will not ask you for your confirmation. This
