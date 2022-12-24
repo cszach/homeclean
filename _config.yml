@@ -1,0 +1,7 @@
+description: A utility for cleaning your Linux system's home directory, written in Bash.
+theme: jekyll-theme-hacker
+show_downloads: true
+plugins:
+    - jemoji
+
+exclude: [bundle]
