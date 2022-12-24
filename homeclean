@@ -345,16 +345,43 @@ fi
 
 # PREPARE FIND COMMAND
 
+# The find command's syntax for excluding files are different than for excluding
+# directories. We need to build a set of options for each type.
+
+HOMECLEAN_IGNORE_FILES=""
+HOMECLEAN_IGNORE_DIRS=""
+
+while IFS= read -r file
+do
+    [ -z "$file" ] && continue
+
+    if [ -f "$file" ]
+    then
+        HOMECLEAN_IGNORE_FILES="$HOMECLEAN_IGNORE_FILES\n$file"
+    elif [ -d "$file" ]
+    then
+        HOMECLEAN_IGNORE_DIRS="$HOMECLEAN_IGNORE_DIRS\n$file"
+    fi
+done <<< "$HOMECLEAN_IGNORE"
+
 # Prepare the ignore options for the find command, which ignore the files and
 # directories in $HOMECLEAN_IGNORE.
 
-HOMECLEAN_IGNORE_OPTS="$( echo "$HOMECLEAN_IGNORE" | sed 's/^/  -path "/;s/$/" -prune -o/' )"
-HOMECLEAN_IGNORE_OPTS="${HOMECLEAN_IGNORE_OPTS%-o}"
-HOMECLEAN_IGNORE_OPTS="$( echo "$HOMECLEAN_IGNORE_OPTS" )"
+HOMECLEAN_IGNORE_FILES_OPTS="$( \
+    echo -e "$HOMECLEAN_IGNORE_FILES" \
+    | sed '/^$/d;s/^/  -not -path "/;s/$/"/' )"
+HOMECLEAN_IGNORE_FILES_OPTS="${HOMECLEAN_IGNORE_FILES_OPTS%-o}"
+
+HOMECLEAN_IGNORE_DIRS_OPTS="$( \
+    echo -e "$HOMECLEAN_IGNORE_DIRS" \
+    | sed '/^$/d;s/^/  -path "/;s/$/" -o/' )"
+HOMECLEAN_IGNORE_DIRS_OPTS="${HOMECLEAN_IGNORE_DIRS_OPTS%-o}"
 
 # Start by building the include and ignore
 
-FIND_COMMAND="find $( echo $HOMECLEAN_INCLUDE | tr '\n' ' ' ) \(\n$HOMECLEAN_IGNORE_OPTS\\)"
+FIND_COMMAND="find $( echo $HOMECLEAN_INCLUDE | tr '\n' ' ' )"
+FIND_COMMAND="$FIND_COMMAND \(\n$HOMECLEAN_IGNORE_DIRS_OPTS\\)\n  -prune -o"
+FIND_COMMAND="$FIND_COMMAND\n$HOMECLEAN_IGNORE_FILES_OPTS"
 
 # Compile search criteria
 #
@@ -363,16 +390,14 @@ FIND_COMMAND="find $( echo $HOMECLEAN_INCLUDE | tr '\n' ' ' ) \(\n$HOMECLEAN_IGN
 # * HOMECLEAN_IGNORE_HIDDEN: 'all', 'root', 'directories', 'files', ''
 # * HOMECLEAN_SEARCH_MODE: 'recursive', 'non-recursive'
 
-FIND_COMMAND="$FIND_COMMAND"
-
-search_criteria="-o -atime +$HOMECLEAN_NOT_ACCESSED"
+search_criteria="-atime +$HOMECLEAN_NOT_ACCESSED"
 
 if [ "$HOMECLEAN_SEARCH_MODE" = "non-recursive" ]
 then
     search_criteria="$search_criteria -maxdepth 1"
 fi
 
-FIND_COMMAND="$FIND_COMMAND\n  $search_criteria"
+FIND_COMMAND="$FIND_COMMAND\n  $search_criteria\n  -print"
 
 # Finally, make the command multiple lines in the command line by replacing all
 # newline characters with \
@@ -430,19 +455,19 @@ amount_cleaned=0
 
 while read -r file
 do
-    if [ "$HOMECLEAN_BEHAVIOR" = "trash" ]
-    then
-        if [ "$HOMECLEAN_TRASH_HIERARCHY" = "preserve" ]
-        then
-            TRASH_PATH="$HOMECLEAN_TRASH/$( dirname $( readlink "$file" ) )"
-            mkdir -p "$TRASH_PATH"
-            mv "$file" "$TRASH_PATH"
-        else
-            mv "$file" "$HOMECLEAN_TRASH"
-        fi
-    else
-        rm -rf "$file"
-    fi
+    # if [ "$HOMECLEAN_BEHAVIOR" = "trash" ]
+    # then
+    #     if [ "$HOMECLEAN_TRASH_HIERARCHY" = "preserve" ]
+    #     then
+    #         TRASH_PATH="$HOMECLEAN_TRASH/$( dirname $( readlink "$file" ) )"
+    #         mkdir -p "$TRASH_PATH"
+    #         mv "$file" "$TRASH_PATH"
+    #     else
+    #         mv "$file" "$HOMECLEAN_TRASH"
+    #     fi
+    # else
+    #     rm -rf "$file"
+    # fi
 
     amount_cleaned=$(( amount_cleaned + $( stat -c%s "$file" ) ))
 done <<< "$FIND_OUTPUT"
