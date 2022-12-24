@@ -195,3 +195,10 @@ To-do
 - [ ] `--export-config` only exports config
 
 Contributions are very welcomed!
+
+License
+-------
+
+This software is released to the public domain. You may freely use, copy,
+modify, and redistribute it without asking for permissions or giving attribution
+(although that is much appreciated). See [`LICENSE`](LICENSE) for more details.
