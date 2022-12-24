@@ -22,6 +22,7 @@ Table of content
    5. [Miscellaneous options](#miscellaneous-options)
    6. [Help information](#help-information)
 3. [To-do](#to-do)
+4. [License](#license)
 
 Download
 --------
